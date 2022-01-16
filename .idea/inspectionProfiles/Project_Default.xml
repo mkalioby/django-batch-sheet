@@ -1,0 +1,79 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="28">
+            <item index="0" class="java.lang.String" itemvalue="django-model-tracker" />
+            <item index="1" class="java.lang.String" itemvalue="channels" />
+            <item index="2" class="java.lang.String" itemvalue="asgiref" />
+            <item index="3" class="java.lang.String" itemvalue="daphne" />
+            <item index="4" class="java.lang.String" itemvalue="django" />
+            <item index="5" class="java.lang.String" itemvalue="django_tables2_reports" />
+            <item index="6" class="java.lang.String" itemvalue="django-debug_toolbar" />
+            <item index="7" class="java.lang.String" itemvalue="pyotp" />
+            <item index="8" class="java.lang.String" itemvalue="pyunpack" />
+            <item index="9" class="java.lang.String" itemvalue="DjangoModelTracker" />
+            <item index="10" class="java.lang.String" itemvalue="pronto" />
+            <item index="11" class="java.lang.String" itemvalue="patool" />
+            <item index="12" class="java.lang.String" itemvalue="tablib" />
+            <item index="13" class="java.lang.String" itemvalue="xlwt" />
+            <item index="14" class="java.lang.String" itemvalue="simplejson" />
+            <item index="15" class="java.lang.String" itemvalue="django_maintenance_mode" />
+            <item index="16" class="java.lang.String" itemvalue="pymysql" />
+            <item index="17" class="java.lang.String" itemvalue="pillow" />
+            <item index="18" class="java.lang.String" itemvalue="whoosh" />
+            <item index="19" class="java.lang.String" itemvalue="django_tables2" />
+            <item index="20" class="java.lang.String" itemvalue="django-mfa2" />
+            <item index="21" class="java.lang.String" itemvalue="pika" />
+            <item index="22" class="java.lang.String" itemvalue="asgi_redis" />
+            <item index="23" class="java.lang.String" itemvalue="django_countries" />
+            <item index="24" class="java.lang.String" itemvalue="openpyxl" />
+            <item index="25" class="java.lang.String" itemvalue="ViewLogger" />
+            <item index="26" class="java.lang.String" itemvalue="ecdsa" />
+            <item index="27" class="java.lang.String" itemvalue="mysqlclient" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8Inspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="E231" />
+          <option value="E501" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N806" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStubPackagesAdvertiser" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="pika-stubs==0.1.3" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="Sample_Registration.models.CDomains.*" />
+          <option value="Registry_app.models.SamplesLinkage.*" />
+          <option value="object.result" />
+          <option value="object.parameters" />
+          <option value="object.save" />
+          <option value="object.id" />
+          <option value="object.modality" />
+          <option value="object.properties" />
+          <option value="object.specimen" />
+          <option value="django.contrib.auth.models.User.permissions" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
