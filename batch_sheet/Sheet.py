@@ -294,7 +294,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 temp_result = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verboses_names[str(key).strip()]
+                    field = self.verbose_names[str(key).strip()]
                     temp_result[field.name] = self.convert_types(field, user_val)
                 result.append(self.row_processor(temp_result))
         self.content = result
