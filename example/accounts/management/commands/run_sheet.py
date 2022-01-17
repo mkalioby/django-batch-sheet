@@ -11,7 +11,6 @@ class StudentSheet(Sheet):
 
     class Meta:
         Model = Student
-        raw_cols = ['gender']
         exclude = ('id',)
 
 
@@ -25,5 +24,5 @@ class Command(BaseCommand):
         # u= UserSheet()
         # u.load(file_name="data_validate.xls")
         std = StudentSheet()
-        std.generate_xls()
-        #std.load(file_name=settings.BASE_DIR + "/data_validate.xls")
+        #std.generate_xls()
+        std.load(file_name=settings.BASE_DIR + "/data_validate.xls")
