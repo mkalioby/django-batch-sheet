@@ -116,7 +116,7 @@ class SheetOptions:
         self.columns = getattr(options, "columns", ())
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
-        self.raw_cols = getattr(options, "raw_cols", None)
+        self.raw_cols = getattr(options, "raw_cols", [])
 
 
 
@@ -128,6 +128,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     names = {}
     rows_count = 10
     instances = []
+    foreign_keys = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -293,9 +294,11 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             if user_val != "":
                 return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
         elif field.get_internal_type() == "ForeignKey":
-            print(field)
-        else:
-            return user_val if user_val != "" else val
+            if not field.name in self.foreign_keys:
+                self.foreign_keys[field.name] = {str(o):o for o in field.related_model.objects.all()}
+            if user_val != "":
+                return self.foreign_keys[field.name].get(user_val,val)
+        return user_val if user_val != "" else val
 
     def convert_json(self, sheet):
         result = []
