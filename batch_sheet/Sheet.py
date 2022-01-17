@@ -116,6 +116,7 @@ class SheetOptions:
         self.columns = getattr(options, "columns", ())
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
+        self.raw_cols = getattr(options, "raw_cols", None)
 
 
 
@@ -215,6 +216,14 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                        'error_message': 'It should be greater than 1900-01-01 00:00:00',
                        'error_type': 'information'
                        }
+        elif field.get_internal_type() == "ForeignKey":
+            if field.name not in self._meta.raw_cols:
+                l=[]
+                if field.null or field.blank:
+                    l.append('---')
+                l.extend([str(o) for o in field.related_model.objects.all()])
+                options = {'validate': 'list', 'source': l}
+
         return options
 
     def generate_xls(self):
@@ -283,6 +292,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         elif field.get_internal_type() == "DateTimeField":
             if user_val != "":
                 return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+        elif field.get_internal_type() == "ForeignKey":
+            print(field)
         else:
             return user_val if user_val != "" else val
 
