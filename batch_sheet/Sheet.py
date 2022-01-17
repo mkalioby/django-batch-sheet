@@ -1,53 +1,187 @@
+from collections import OrderedDict
+
+import django.db.models
 import xlsxwriter
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 
-class Sheet:
+class DeclarativeColumnsMetaclass(type):
+    """
+    Metaclass that converts `.Column` objects defined on a class to the
+    dictionary `.Table.base_columns`, taking into account parent class
+    `base_columns` as well.
+    """
+
+    def __new__(mcs, name, bases, attrs):
+        attrs["_meta"] = opts = SheetOptions(attrs.get("Meta", None), name)
+
+        # extract declared columns
+        cols, remainder = [], {}
+        for attr_name, attr in attrs.items():
+            if isinstance(attr, django.db.models.Field):
+                attr._explicit = True
+                cols.append((attr_name, attr))
+            else:
+                remainder[attr_name] = attr
+        attrs = remainder
+
+        cols.sort(key=lambda x: x[1].creation_counter)
+
+        # If this class is subclassing other tables, add their fields as
+        # well. Note that we loop over the bases in *reverse* - this is
+        # necessary to preserve the correct order of columns.
+        parent_columns = []
+        for base in reversed(bases):
+            if hasattr(base, "base_columns"):
+                parent_columns = list(base.base_columns.items()) + parent_columns
+
+        # Start with the parent columns
+        base_columns = OrderedDict(parent_columns)
+
+        # Possibly add some generated columns based on a model
+        if opts.model:
+            extra = OrderedDict()
+
+            # honor Table.Meta.fields, fallback to model._meta.fields
+            if opts.columns is not None:
+                # Each item in opts.fields is the name of a model field or a normal attribute on the model
+                for field_name in opts.columns:
+                    extra[field_name] = field_name
+            else:
+                for field in opts.model._meta.fields:
+                    extra[field.name] = field
+
+            # update base_columns with extra columns
+            for key, column in extra.items():
+                # skip current column because the parent was explicitly defined,
+                # and the current column is not.
+                if key in base_columns and base_columns[key]._explicit is True:
+                    continue
+                base_columns[key] = column
+
+        # Explicit columns override both parent and generated columns
+        base_columns.update(OrderedDict(cols))
+
+        # Apply any explicit exclude setting
+        for exclusion in opts.exclude:
+            if exclusion in base_columns:
+                base_columns.pop(exclusion)
+
+        # Remove any columns from our remainder, else columns from our parent class will remain
+        for attr_name in remainder:
+            if attr_name in base_columns:
+                base_columns.pop(attr_name)
+
+        # Set localize on columns
+        # for col_name in base_columns.keys():
+        #     localize_column = None
+        #     if col_name in opts.localize:
+        #         localize_column = True
+        #     # unlocalize gets higher precedence
+        #     if col_name in opts.unlocalize:
+        #         localize_column = False
+        #
+        #     if localize_column is not None:
+        #         base_columns[col_name].localize = localize_column
+
+        attrs["columns"] = base_columns
+        return super().__new__(mcs, name, bases, attrs)
+
+
+class SheetOptions:
+    """
+    Extracts and exposes options for a `.Table` from a `.Table.Meta`
+    when the table is defined. See `.Table` for documentation on the impact of
+    variables in this class.
+    Arguments:
+        options (`.Table.Meta`): options for a table from `.Table.Meta`
+    """
+
+    def __init__(self, options, class_name):
+        super().__init__()
+        #self._check_types(options, class_name)
+
+        SHEET_ATTRS = getattr(settings, "SHEET_ATTRS", {})
+
+        self.attrs = getattr(options, "attrs", SHEET_ATTRS)
+        self.rows_count = getattr(options, "rows_count", 10)
+        self.columns = getattr(options, "columns", ())
+        self.exclude = getattr(options, "exclude", ())
+        self.model = getattr(options, "Model", None)
+
+
+
+class Sheet(metaclass=DeclarativeColumnsMetaclass):
     columns = None
     exclude = None
     model = None
-    verboses_names = {}
+    verbose_names = {}
     names = {}
     rows_count = 10
     instances = []
 
+    class Meta:
+        columns = []
+        rows_count = 10
+        exclude = []
+        model = None
+
     def __init__(self, *args, **kwargs):
-        cls = self.Meta
-        self.model = cls.Model
-        if "columns" not in cls.__dict__ and "exclude" not in cls.__dict__:
+        super().__init__()
+
+        # cls = self.Meta
+        # self.model = cls.Model
+        # if "columns" not in cls.__dict__ and "exclude" not in cls.__dict__:
+        #     raise ImproperlyConfigured(
+        #         "Calling Sheet without defining 'fields' or "
+        #         "'exclude' explicitly is prohibited."
+        #     )
+        #
+        # if "columns" in cls.__dict__ and "exclude" in cls.__dict__:
+        #     raise ImproperlyConfigured(
+        #         "Cannot call both columns and exclude. Please specify only one"
+        #     )
+        #
+        # if "exclude" in cls.__dict__: self.exclude = cls.exclude
+        # if "columns" in cls.__dict__: self.columns = cls.columns
+        # if "rows_count" in cls.__dict__: self.rows_count = cls.rows_count
+        self.model = self._meta.model
+        self.exclude = self._meta.exclude
+        self.attrs = self._meta.attrs
+        self.selected_columns = self._meta.columns
+        self.rows_count = self._meta.rows_count
+        if len(self.columns) == 0 and len(self.exclude) == 0:
             raise ImproperlyConfigured(
                 "Calling Sheet without defining 'fields' or "
                 "'exclude' explicitly is prohibited."
             )
 
-        if "columns" in cls.__dict__ and "exclude" in cls.__dict__:
+        if len(self.columns) > 0 and len(self.exclude) < 0:
             raise ImproperlyConfigured(
                 "Cannot call both columns and exclude. Please specify only one"
             )
 
-        if "exclude" in cls.__dict__: self.exclude = cls.exclude
-        if "columns" in cls.__dict__: self.columns = cls.columns
-        if "rows_count" in cls.__dict__: self.rows_count = cls.rows_count
-
+        if self.model is None:
+            raise ImproperlyConfigured("Model is required for now")
         self._set_active_columns()
         self._get_labels()
 
     def _set_active_columns(self):
-        self.columns = []
+
         # for item in vars(self):
         #     self.columns.append(item)
         if self.exclude:
             self.columns.extend([f for f in self.model._meta.fields if
-                                 f.name not in self.exclude and getattr(self, f.name, None) is None])
+                                 f.name not in self.exclude])
         else:
             self.columns.extend(
-                [f for f in self.model._meta.fields if f.name in self.columns and getattr(self, f.name, None) is None])
+                [f for f in self.model._meta.fields if f.name in self.columns])
         print(44, self.columns)
 
     def _get_labels(self):
         for field in self.columns:
-            self.verboses_names[str(field.verbose_name)] = field
+            self.verbose_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
 
     def generate_xls(self):
@@ -63,7 +197,7 @@ class Sheet:
             'indent': 1,
         })
         i = 0
-        for name, field in self.verboses_names.items():
+        for name, field in self.verbose_names.items():
             print(name, type(name))
             worksheet.write(0, i, name, header_format)
             if field.get_internal_type() == "BooleanField":
@@ -103,7 +237,7 @@ class Sheet:
                 temp_result = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verboses_names[str(key).strip()]
+                    field = self.verbose_names[str(key).strip()]
                     val = field.get_default()
                     null = field.null
                     if field.get_internal_type() == "BooleanField":
@@ -134,6 +268,36 @@ class Sheet:
             if res:
                 self.process()
                 self.post_process()
+
+
+def sheet_factory(model, sheet=Sheet, columns=None, exclude=None):
+    """
+    Return Table class for given `model`, equivalent to defining a custom table class::
+        class MyTable(tables.Table):
+            class Meta:
+                model = model
+    Arguments:
+        model (`~django.db.models.Model`): Model associated with the new table
+        table (`.Table`): Base Table class used to create the new one
+        fields (list of str): Fields displayed in tables
+        exclude (list of str): Fields exclude in tables
+        localize (list of str): Fields to localize
+    """
+    attrs = {"model": model}
+    if columns is not None:
+        attrs["columns"] = columns
+    if exclude is not None:
+        attrs["exclude"] = exclude
+    # If parent form class already has an inner Meta, the Meta we're
+    # creating needs to inherit from the parent's inner meta.
+    parent = (sheet.Meta, object) if hasattr(sheet, "Meta") else (object,)
+    Meta = type("Meta", parent, attrs)
+
+    # Give this new table class a reasonable name.
+    class_name = model.__name__ + "AutogeneratedSheet"
+    # Class attributes for the new table class.
+    table_class_attrs = {"Meta": Meta}
+    return type(sheet)(class_name, (sheet,), table_class_attrs)
 
 # def dump_old():
 #     workbook = xlsxwriter.Workbook('data_validate.xlsx')
