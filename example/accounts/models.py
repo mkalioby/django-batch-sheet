@@ -9,5 +9,6 @@ class  Student(models.Model):
     courses = models.CharField(max_length=1,choices=[("A", "A"), ("B", "B")])
     date_of_birth = models.DateTimeField(null=True,blank=True)
     graduate = models.DateField(null=True,blank=True)
+    grade = models.FloatField(null=True, blank=True)
 
     #courses = JSONField()
