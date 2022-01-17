@@ -1,6 +1,9 @@
 from collections import OrderedDict
 
 import django.db.models
+import datetime
+
+import xlrd
 import xlsxwriter
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -17,11 +20,14 @@ class DeclarativeColumnsMetaclass(type):
         attrs["_meta"] = opts = SheetOptions(attrs.get("Meta", None), name)
 
         # extract declared columns
-        cols, remainder = [], {}
+        cols, remainder,explicit = [], {},{}
         for attr_name, attr in attrs.items():
             if isinstance(attr, django.db.models.Field):
-                attr._explicit = True
-                cols.append((attr_name, attr))
+                attr.name = attr_name
+                verbose_name  = attr.verbose_name
+                if verbose_name in (None,""):
+                    attr.verbose_name = attr_name
+                explicit[attr_name]=attr
             else:
                 remainder[attr_name] = attr
         attrs = remainder
@@ -85,7 +91,8 @@ class DeclarativeColumnsMetaclass(type):
         #     if localize_column is not None:
         #         base_columns[col_name].localize = localize_column
 
-        attrs["columns"] = base_columns
+        attrs["base_columns"] = base_columns
+        attrs["explicit"]=explicit
         return super().__new__(mcs, name, bases, attrs)
 
 
@@ -113,19 +120,13 @@ class SheetOptions:
 
 
 class Sheet(metaclass=DeclarativeColumnsMetaclass):
-    columns = None
-    exclude = None
+    columns = []
+    exclude = []
     model = None
     verbose_names = {}
     names = {}
     rows_count = 10
     instances = []
-
-    class Meta:
-        columns = []
-        rows_count = 10
-        exclude = []
-        model = None
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -157,7 +158,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 "'exclude' explicitly is prohibited."
             )
 
-        if len(self.columns) > 0 and len(self.exclude) < 0:
+        if len(self.selected_columns) > 0 and len(self.exclude) < 0:
             raise ImproperlyConfigured(
                 "Cannot call both columns and exclude. Please specify only one"
             )
@@ -173,16 +174,48 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         #     self.columns.append(item)
         if self.exclude:
             self.columns.extend([f for f in self.model._meta.fields if
-                                 f.name not in self.exclude])
+                                 f.name not in self.explicit and not f.name in self.exclude])
         else:
             self.columns.extend(
-                [f for f in self.model._meta.fields if f.name in self.columns])
+                [f for f in self.model._meta.fields if f.name in self.columns and f.name not in self.explicit])
+
+        for name,field in self.explicit.items():
+            self.columns.append(field)
         print(44, self.columns)
 
     def _get_labels(self):
         for field in self.columns:
             self.verbose_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
+
+    def sheet_data_validation(self, field):
+        options = {'validate': 'any', 'criteria': 'not equal to', 'value': None}
+        if field.get_internal_type() == "BooleanField":
+            options = {'validate': 'list', 'source': ["", "Yes", "No"]}
+        elif field.get_internal_type() == "CharField":
+            if field.choices:
+                options = {'validate': 'list', 'source': [c[0] for c in field.choices]}
+        elif field.get_internal_type() == "DateField":
+            options = {'validate': 'date',
+                       'criteria': '>',
+                       'value': datetime.date(1900, 1, 1),
+                       'input_title': 'Date format: YYYY-MM-DD',
+                       'input_message': 'Greater than 1900-01-01',
+                       'error_title': 'Date is not valid!',
+                       'error_message': 'It should be greater than 1900-01-01',
+                       'error_type': 'information'
+                       }
+        elif field.get_internal_type() == "DateTimeField":
+            options = {'validate': 'date',
+                       'criteria': '>',
+                       'value': datetime.date(1900, 1, 1),
+                       'input_title': 'Date format: YYYY-MM-DD HH:MM',
+                       'input_message': 'Greater than 1900-01-01 00:00:00',
+                       'error_title': 'Date is not valid!',
+                       'error_message': 'It should be greater than 1900-01-01 00:00:00',
+                       'error_type': 'information'
+                       }
+        return options
 
     def generate_xls(self):
         workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
@@ -196,17 +229,15 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             'valign': 'vcenter',
             'indent': 1,
         })
+        worksheet.set_row(0, height=30)
         i = 0
+
         for name, field in self.verbose_names.items():
+            worksheet.set_column(0, i, width=20)
             print(name, type(name))
             worksheet.write(0, i, name, header_format)
-            if field.get_internal_type() == "BooleanField":
-                options = {'validate': 'list', 'source': ["", "Yes", "No"]}
-                worksheet.data_validation(1, i, self.rows_count, i, options)
-            elif field.get_internal_type() == "CharField":
-                if field.choices:
-                    options = {'validate': 'list', 'source': [c[0] for c in field.choices]}
-                    worksheet.data_validation(1, i, self.rows_count, i, options)
+            options = self.sheet_data_validation(field)
+            worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
         workbook.close()
 
@@ -229,6 +260,25 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def row_processor(self, row):
         return row
 
+    def convert_types(self, field, user_val):
+        val = field.get_default()
+        null = field.null
+        if field.get_internal_type() == "BooleanField":
+            if user_val == "Yes": val = True
+            if user_val == "No": val = False
+            return val
+        elif field.get_internal_type() == "IntegerField":
+            if user_val != "":
+                return int(user_val)
+        elif field.get_internal_type() == "DateField":
+            if user_val != "":
+                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+        elif field.get_internal_type() == "DateTimeField":
+            if user_val != "":
+                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+        else:
+            return user_val if user_val != "" else val
+
     def convert_json(self, sheet):
         result = []
         if not result:
@@ -237,27 +287,12 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 temp_result = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verbose_names[str(key).strip()]
-                    val = field.get_default()
-                    null = field.null
-                    if field.get_internal_type() == "BooleanField":
-                        if user_val == "Yes": val = True
-                        if user_val == "No": val = False
-                        temp_result[field.name] = val
-                    elif field.get_internal_type() == "IntegerField":
-
-                        if user_val != "":
-                            temp_result[field.name] = int(user_val)
-                    else:
-                        if user_val != "":
-                            temp_result[field.name] = user_val
-                        else:
-                            temp_result[field.name] = val
+                    field = self.verboses_names[str(key).strip()]
+                    temp_result[field.name] = self.convert_types(field, user_val)
                 result.append(self.row_processor(temp_result))
         self.content = result
 
     def load(self, file_name=None, file_content=None):
-        import xlrd
         if file_name:
             wb = xlrd.open_workbook(file_name)
             sh = wb.sheets()[0]
@@ -270,34 +305,6 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 self.post_process()
 
 
-def sheet_factory(model, sheet=Sheet, columns=None, exclude=None):
-    """
-    Return Table class for given `model`, equivalent to defining a custom table class::
-        class MyTable(tables.Table):
-            class Meta:
-                model = model
-    Arguments:
-        model (`~django.db.models.Model`): Model associated with the new table
-        table (`.Table`): Base Table class used to create the new one
-        fields (list of str): Fields displayed in tables
-        exclude (list of str): Fields exclude in tables
-        localize (list of str): Fields to localize
-    """
-    attrs = {"model": model}
-    if columns is not None:
-        attrs["columns"] = columns
-    if exclude is not None:
-        attrs["exclude"] = exclude
-    # If parent form class already has an inner Meta, the Meta we're
-    # creating needs to inherit from the parent's inner meta.
-    parent = (sheet.Meta, object) if hasattr(sheet, "Meta") else (object,)
-    Meta = type("Meta", parent, attrs)
-
-    # Give this new table class a reasonable name.
-    class_name = model.__name__ + "AutogeneratedSheet"
-    # Class attributes for the new table class.
-    table_class_attrs = {"Meta": Meta}
-    return type(sheet)(class_name, (sheet,), table_class_attrs)
 
 # def dump_old():
 #     workbook = xlsxwriter.Workbook('data_validate.xlsx')

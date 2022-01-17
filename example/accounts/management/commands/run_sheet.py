@@ -6,11 +6,11 @@ from batch_sheet.Sheet import Sheet
 
 
 class StudentSheet(Sheet):
-    # courses = models.CharField(choices=[("C", "C"), ("D", "D")])
+    courses = models.CharField(choices=[("C", "C"), ("D", "D")],verbose_name="Ahmed")
 
     class Meta:
         Model = Student
-        exclude = [""]
+        exclude = ('id',)
 
 
 class Command(BaseCommand):
@@ -24,3 +24,4 @@ class Command(BaseCommand):
         # u.load(file_name="data_validate.xls")
         std = StudentSheet()
         std.generate_xls()
+        #std.load(file_name="data_validate.xls")
