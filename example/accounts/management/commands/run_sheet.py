@@ -10,7 +10,7 @@ class StudentSheet(Sheet):
 
     class Meta:
         Model = Student
-        exclude = [""]
+        exclude = ('id',)
 
 
 class Command(BaseCommand):
@@ -23,4 +23,5 @@ class Command(BaseCommand):
         # u= UserSheet()
         # u.load(file_name="data_validate.xls")
         std = StudentSheet()
-        std.generate_xls()
+        # std.generate_xls()
+        std.load(file_name="data_validate.xls")

@@ -1,3 +1,6 @@
+import datetime
+
+import xlrd
 import xlsxwriter
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -50,6 +53,35 @@ class Sheet:
             self.verboses_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
 
+    def sheet_data_validation(self, field):
+        options = {'validate': 'any', 'criteria': 'not equal to', 'value': None}
+        if field.get_internal_type() == "BooleanField":
+            options = {'validate': 'list', 'source': ["", "Yes", "No"]}
+        elif field.get_internal_type() == "CharField":
+            if field.choices:
+                options = {'validate': 'list', 'source': [c[0] for c in field.choices]}
+        elif field.get_internal_type() == "DateField":
+            options = {'validate': 'date',
+                       'criteria': '>',
+                       'value': datetime.date(1900, 1, 1),
+                       'input_title': 'Date format: YYYY-MM-DD',
+                       'input_message': 'Greater than 1900-01-01',
+                       'error_title': 'Date is not valid!',
+                       'error_message': 'It should be greater than 1900-01-01',
+                       'error_type': 'information'
+                       }
+        elif field.get_internal_type() == "DateTimeField":
+            options = {'validate': 'date',
+                       'criteria': '>',
+                       'value': datetime.date(1900, 1, 1),
+                       'input_title': 'Date format: YYYY-MM-DD HH:MM',
+                       'input_message': 'Greater than 1900-01-01 00:00:00',
+                       'error_title': 'Date is not valid!',
+                       'error_message': 'It should be greater than 1900-01-01 00:00:00',
+                       'error_type': 'information'
+                       }
+        return options
+
     def generate_xls(self):
         workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
         worksheet = workbook.add_worksheet()
@@ -62,17 +94,13 @@ class Sheet:
             'valign': 'vcenter',
             'indent': 1,
         })
+        worksheet.set_row(0, height=30)
         i = 0
         for name, field in self.verboses_names.items():
-            print(name, type(name))
+            worksheet.set_column(0, i, width=20)
             worksheet.write(0, i, name, header_format)
-            if field.get_internal_type() == "BooleanField":
-                options = {'validate': 'list', 'source': ["", "Yes", "No"]}
-                worksheet.data_validation(1, i, self.rows_count, i, options)
-            elif field.get_internal_type() == "CharField":
-                if field.choices:
-                    options = {'validate': 'list', 'source': [c[0] for c in field.choices]}
-                    worksheet.data_validation(1, i, self.rows_count, i, options)
+            options = self.sheet_data_validation(field)
+            worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
         workbook.close()
 
@@ -95,6 +123,25 @@ class Sheet:
     def row_processor(self, row):
         return row
 
+    def convert_types(self, field, user_val):
+        val = field.get_default()
+        null = field.null
+        if field.get_internal_type() == "BooleanField":
+            if user_val == "Yes": val = True
+            if user_val == "No": val = False
+            return val
+        elif field.get_internal_type() == "IntegerField":
+            if user_val != "":
+                return int(user_val)
+        elif field.get_internal_type() == "DateField":
+            if user_val != "":
+                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+        elif field.get_internal_type() == "DateTimeField":
+            if user_val != "":
+                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+        else:
+            return user_val if user_val != "" else val
+
     def convert_json(self, sheet):
         result = []
         if not result:
@@ -104,26 +151,11 @@ class Sheet:
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
                     field = self.verboses_names[str(key).strip()]
-                    val = field.get_default()
-                    null = field.null
-                    if field.get_internal_type() == "BooleanField":
-                        if user_val == "Yes": val = True
-                        if user_val == "No": val = False
-                        temp_result[field.name] = val
-                    elif field.get_internal_type() == "IntegerField":
-
-                        if user_val != "":
-                            temp_result[field.name] = int(user_val)
-                    else:
-                        if user_val != "":
-                            temp_result[field.name] = user_val
-                        else:
-                            temp_result[field.name] = val
+                    temp_result[field.name] = self.convert_types(field, user_val)
                 result.append(self.row_processor(temp_result))
         self.content = result
 
     def load(self, file_name=None, file_content=None):
-        import xlrd
         if file_name:
             wb = xlrd.open_workbook(file_name)
             sh = wb.sheets()[0]
