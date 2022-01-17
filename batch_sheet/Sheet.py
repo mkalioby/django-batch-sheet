@@ -133,6 +133,13 @@ class Sheet:
         elif field.get_internal_type() == "IntegerField":
             if user_val != "":
                 return int(user_val)
+        elif field.get_internal_type() == "FloatField":
+            if user_val != "":
+                return float(user_val)
+        elif field.get_internal_type() == "DecimalField":
+            from decimal import Decimal
+            if user_val != "":
+                return Decimal(user_val)
         elif field.get_internal_type() == "DateField":
             if user_val != "":
                 return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
