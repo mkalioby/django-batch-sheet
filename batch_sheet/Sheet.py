@@ -11,9 +11,9 @@ from django.core.exceptions import ImproperlyConfigured
 
 class DeclarativeColumnsMetaclass(type):
     """
-    Metaclass that converts `.Column` objects defined on a class to the
-    dictionary `.Table.base_columns`, taking into account parent class
-    `base_columns` as well.
+    Metaclass that converts `.Field` objects defined on a class to the
+    dictionary `.Sheet.explicit`, taking into account parent class
+    `base_fields` as well.
     """
 
     def __new__(mcs, name, bases, attrs):
@@ -39,11 +39,11 @@ class DeclarativeColumnsMetaclass(type):
         # necessary to preserve the correct order of columns.
         parent_columns = []
         for base in reversed(bases):
-            if hasattr(base, "base_columns"):
-                parent_columns = list(base.base_columns.items()) + parent_columns
+            if hasattr(base, "base_fields"):
+                parent_columns = list(base.base_fields.items()) + parent_columns
 
         # Start with the parent columns
-        base_columns = OrderedDict(parent_columns)
+        base_fields = OrderedDict(parent_columns)
 
         # Possibly add some generated columns based on a model
         if opts.model:
@@ -62,47 +62,25 @@ class DeclarativeColumnsMetaclass(type):
             for key, column in extra.items():
                 # skip current column because the parent was explicitly defined,
                 # and the current column is not.
-                if key in base_columns and base_columns[key]._explicit is True:
+                if key in base_fields and base_fields[key]._explicit is True:
                     continue
-                base_columns[key] = column
+                base_fields[key] = column
 
         # Explicit columns override both parent and generated columns
-        base_columns.update(OrderedDict(cols))
+        base_fields.update(OrderedDict(explicit))
 
-        # Apply any explicit exclude setting
-        for exclusion in opts.exclude:
-            if exclusion in base_columns:
-                base_columns.pop(exclusion)
 
-        # Remove any columns from our remainder, else columns from our parent class will remain
-        for attr_name in remainder:
-            if attr_name in base_columns:
-                base_columns.pop(attr_name)
-
-        # Set localize on columns
-        # for col_name in base_columns.keys():
-        #     localize_column = None
-        #     if col_name in opts.localize:
-        #         localize_column = True
-        #     # unlocalize gets higher precedence
-        #     if col_name in opts.unlocalize:
-        #         localize_column = False
-        #
-        #     if localize_column is not None:
-        #         base_columns[col_name].localize = localize_column
-
-        attrs["base_columns"] = base_columns
+        attrs["base_fields"] = base_fields
         attrs["explicit"]=explicit
         return super().__new__(mcs, name, bases, attrs)
 
 
 class SheetOptions:
     """
-    Extracts and exposes options for a `.Table` from a `.Table.Meta`
-    when the table is defined. See `.Table` for documentation on the impact of
-    variables in this class.
+    Extracts and exposes options for a `.Sheet` from a `.Sheet.Meta`
+    when the sheet is defined.
     Arguments:
-        options (`.Table.Meta`): options for a table from `.Table.Meta`
+        options (`.Sheet.Meta`): options for a sheet from `.Sheet.Meta`
     """
 
     def __init__(self, options, class_name):
@@ -121,6 +99,7 @@ class SheetOptions:
 
 
 class Sheet(metaclass=DeclarativeColumnsMetaclass):
+    """Main Sheet Class"""
     columns = []
     exclude = []
     model = None
@@ -133,22 +112,6 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def __init__(self, *args, **kwargs):
         super().__init__()
 
-        # cls = self.Meta
-        # self.model = cls.Model
-        # if "columns" not in cls.__dict__ and "exclude" not in cls.__dict__:
-        #     raise ImproperlyConfigured(
-        #         "Calling Sheet without defining 'fields' or "
-        #         "'exclude' explicitly is prohibited."
-        #     )
-        #
-        # if "columns" in cls.__dict__ and "exclude" in cls.__dict__:
-        #     raise ImproperlyConfigured(
-        #         "Cannot call both columns and exclude. Please specify only one"
-        #     )
-        #
-        # if "exclude" in cls.__dict__: self.exclude = cls.exclude
-        # if "columns" in cls.__dict__: self.columns = cls.columns
-        # if "rows_count" in cls.__dict__: self.rows_count = cls.rows_count
         self.model = self._meta.model
         self.exclude = self._meta.exclude
         self.attrs = self._meta.attrs
@@ -171,9 +134,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         self._get_labels()
 
     def _set_active_columns(self):
+        "Applied columns and exclude settings from the Meta and generate the final list of columns to handle"
 
-        # for item in vars(self):
-        #     self.columns.append(item)
         if self.exclude:
             self.columns.extend([f for f in self.model._meta.fields if
                                  f.name not in self.explicit and not f.name in self.exclude])
@@ -183,9 +145,10 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         for name,field in self.explicit.items():
             self.columns.append(field)
-        print(44, self.columns)
+
 
     def _get_labels(self):
+        """Generate a dictionary for verbose_names and other one for field names"""
         for field in self.columns:
             self.verbose_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
@@ -261,8 +224,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         for row in self.content:
             final_row = {k: v for k, v in row.items() if k in self.names}
             obj = self.model(**final_row)
-            obj.save()
-            self.instances.append(obj)
+            x= self.save(obj)
+            if x:
+                self.instances.append(x)
 
     def post_process(self):
         print("Called Class post_process")

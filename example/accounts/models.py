@@ -15,11 +15,9 @@ class Gender (models.Model):
 
 class  Student(models.Model):
     name = models.CharField(max_length=50)
-    age = models.IntegerField()
+    student_id = models.CharField(max_length=50)
     gender= models.ForeignKey(Gender,on_delete=models.PROTECT,null=True)
     courses = JSONField()
-    date_of_birth = models.DateTimeField(null=True,blank=True)
-    graduate = models.DateField(null=True,blank=True)
-    grade = models.FloatField(null=True, blank=True)
-
+    date_of_birth = models.DateField(null=True,blank=True)
+    #grade = models.FloatField(null=True, blank=True)
     #courses = JSONField()

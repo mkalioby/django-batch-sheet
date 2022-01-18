@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from accounts.models import Student
+from accounts.models import Student,Courses
 from django.core.management.base import BaseCommand
 from django.db import models
 
@@ -8,6 +8,19 @@ from batch_sheet.Sheet import Sheet
 
 
 class StudentSheet(Sheet):
+    courses = models.ForeignKey(Courses,on_delete=models.PROTECT)
+
+    def save(self,obj):
+
+        if Student.objects.filter(student_id=obj.student_id).exists():
+            s = Student.objects.get(student_id=obj.student_id)
+            s.courses.append(obj.courses.id)
+        else:
+            s = obj
+            s.courses=[obj.courses.id]
+        s.save()
+        return s
+
 
     class Meta:
         Model = Student
