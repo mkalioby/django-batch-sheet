@@ -4,3 +4,4 @@ sqlparse==0.4.2
 whitenoise==5.3.0
 xlsxwriter
 xlrd
+jsonfield
