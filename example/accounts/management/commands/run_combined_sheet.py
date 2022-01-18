@@ -10,9 +10,11 @@ class Command(BaseCommand):
     requires_system_checks = False
 
     def handle(self, *args, **options):
-        # from accounts.sheets import UserSheet
-        # u= UserSheet()
-        # u.load(file_name="data_validate.xls")
         sheet = NGSSheet()
         #sheet.generate_xls()
-        sheet.load(file_name=settings.BASE_DIR + "/data_validate.xls")
+        sheet.open(file_name=settings.BASE_DIR + "/data_validate.xls")
+        if sheet.is_valid():
+             sheet.process()
+             print(sheet.instances)
+        else:
+             print(sheet.errors)

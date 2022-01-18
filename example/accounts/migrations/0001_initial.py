@@ -48,4 +48,10 @@ class Migration(migrations.Migration):
                 ('test', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='accounts.Test')),
             ],
         ),
+        migrations.RunSQL(
+            """
+            insert into accounts_gender (name) values ('Male'),('Female'),('Non-Specified');
+            insert into accounts_test (name) values ('WES - Ion'),('Exome Sequencing');
+            """
+        )
     ]

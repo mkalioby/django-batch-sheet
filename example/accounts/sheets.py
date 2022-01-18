@@ -1,4 +1,5 @@
 from .models import Patient,Test,Sample
+from django.db import models
 
 from batch_sheet.Sheet import Sheet
 from batch_sheet.CombinedSheet import CombinedSheet
@@ -20,6 +21,9 @@ class PatientSheet(Sheet):
 
 
 class SampleSheet(Sheet):
+    def row_preprocessor(self,row):
+        return row
+
     def save(self,obj,row_objs):
         patient = row_objs.get('patient')
         if patient is None:
@@ -30,7 +34,8 @@ class SampleSheet(Sheet):
             return obj
 
     class Meta:
-        exclude =('id','sample_date','lastUpdate','patient')
+        exclude =('id','sample_date','lastUpdate')
+        validation_exclude = ('patient',)
         Model = Sample
 
 

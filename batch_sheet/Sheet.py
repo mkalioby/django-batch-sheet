@@ -1,12 +1,11 @@
+import datetime
 from collections import OrderedDict
 
 import django.db.models
-import datetime
-
 import xlrd
 import xlsxwriter
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 
 class DeclarativeColumnsMetaclass(type):
@@ -95,6 +94,7 @@ class SheetOptions:
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
         self.raw_cols = getattr(options, "raw_cols", [])
+        self.validation_exclude = getattr(options, "validation_exclude", [])
         if getattr(options, "object_name", None):
             self.object_name = getattr(options, "object_name", None)
 
@@ -110,6 +110,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     rows_count = 10
     instances = []
     foreign_keys = {}
+    errors = {}
+    data = []
+    cleaned_data = []
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -119,6 +122,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         self.attrs = self._meta.attrs
         self.selected_columns = self._meta.columns
         self.rows_count = self._meta.rows_count
+        self.not_provided = []
         if len(self.columns) == 0 and len(self.exclude) == 0:
             raise ImproperlyConfigured(
                 "Calling Sheet without defining 'fields' or "
@@ -214,6 +218,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         i = col_offset
 
         for name, field in self.verbose_names.items():
+            if field.get_internal_type() == "NOT_PROVIDED":
+                pass
             worksheet.set_column(0, i, width=20)
             print(name, type(name))
             worksheet.write(0, i, name, header_format)
@@ -227,26 +233,38 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def pre_load(self):
         pass
 
-    def valid(self):
-        return True
+
+    def is_valid(self):
+        if len(self.cleaned_data)==0:
+            self.convert_json(self.sheet)
+        return len(self.errors) == 0
 
     def row_preprocessor(self,row):
         return row
-
-    def process(self):
-        for row in self.content:
-            x = self.row_processor(row)
-            if x:
-                self.instances.append(x)
-
-    def post_process(self):
-        print("Called Class post_process")
 
     def row_processor(self, row,row_objs={}):
         final_row = {k: v for k, v in row.items() if k in self.names}
         obj = self.model(**final_row)
         x = self.save(obj,row_objs)
         return x
+
+    def process(self,):
+        self.convert_json(self.sheet)
+        for row in self.cleaned_data:
+            x = self.row_processor(row)
+            if x:
+                self.instances.append(x)
+
+    def post_process(self):
+        pass
+
+    def clean(self,row_number, row):
+        final_row = {k: v for k, v in row.items() if k in self.names}
+        obj = self.model(**final_row)
+        try:
+            obj.clean_fields(exclude=self._meta.validation_exclude)
+        except ValidationError as exp:
+            self.errors[row_number] = exp.message_dict
 
     def convert_types(self, field, user_val):
         val = field.get_default()
@@ -255,6 +273,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             if user_val == "Yes": val = True
             if user_val == "No": val = False
             return val
+
         elif field.get_internal_type() == "IntegerField":
             if user_val != "":
                 return int(user_val)
@@ -265,12 +284,12 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             from decimal import Decimal
             if user_val != "":
                 return Decimal(user_val)
-        elif field.get_internal_type() == "DateField":
+        elif field.get_internal_type() in ["DateField","DateTimeField"]:
             if user_val != "":
-                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
-        elif field.get_internal_type() == "DateTimeField":
-            if user_val != "":
-                return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+                try:
+                    return datetime.datetime(*xlrd.xldate_as_tuple(user_val, 0))
+                except:
+                    raise ValidationError("%s is not a valid %s value"%(user_val,field.get_internal_type()))
         elif field.get_internal_type() == "ForeignKey":
             if not field.name in self.foreign_keys:
                 self.foreign_keys[field.name] = {str(o):o for o in field.related_model.objects.all()}
@@ -280,193 +299,47 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def convert_json(self, sheet):
         result = []
+        self.cleaned_data= []
+        self.data= []
+        self.errors ={}
         if not result:
             keys = sheet.row_values(0)
             for row in range(1, sheet.nrows):
                 temp_result = {}
+                row_data = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verbose_names.get(str(key).strip(),None)
-                    if field:
-                        temp_result[field.name] = self.convert_types(field, user_val)
-                result.append(self.row_preprocessor(temp_result))
-        self.content = result
-        return result
+                    field = self.verbose_names.get(str(key).strip())
+                    if field is None: continue
+                    field_name = field.name
+                    row_data [field_name]=user_val
+                    try:
+                        temp_result[field_name] = self.convert_types(field, user_val)
+                    except ValidationError as exp:
+                        #temp_result[field_name] = None
+                        if not row in self.errors: self.errors[row] = {}
+                        self.errors[row][field_name] = exp
+                for c in self.verbose_names:
+                    if not c in temp_result:
+                        temp_result[c]=None
+                final_row = self.row_preprocessor(temp_result)
+                self.cleaned_data.append(final_row)
+                self.data.append(row_data)
+                self.clean(row,final_row)
 
-    def load(self, file_name=None, file_content=None):
+    def open(self, file_name=None, file_content=None):
         if file_name:
             wb = xlrd.open_workbook(file_name)
-            sh = wb.sheets()[0]
+            self.sheet = wb.sheets()[0]
+
+    def load(self, file_name=None, file_content=None):
+            self.open(file_name,file_content)
             self.pre_load()
-            self.convert_json(sh)
-            print(self.content)
-            res = self.valid()
-            if res:
+            if self.is_valid():
                 self.process()
                 self.post_process()
+            else:
+                raise ValidationError(self.errors)
 
 
 
-# def dump_old():
-#     workbook = xlsxwriter.Workbook('data_validate.xlsx')
-#     worksheet = workbook.add_worksheet()
-#
-#     header_format = workbook.add_format({
-#         'border': 1,
-#         'bg_color': '#C6EFCE',
-#         'bold': True,
-#         'text_wrap': True,
-#         'valign': 'vcenter',
-#         'indent': 1,
-#     })
-#
-#     heading1 = 'Some examples of data validation in XlsxWriter'
-#     heading2 = 'Enter values in this column'
-#
-#     worksheet.write('A1', heading1, header_format)
-#     worksheet.write('B1', heading2, header_format)
-#
-#     # Example 1. Limiting input to an integer in a fixed range.
-#     #
-#     txt = 'Enter an integer between 1 and 10'
-#
-#     worksheet.write('A3', txt)
-#     worksheet.data_validation('B3', {'validate': 'integer',
-#                                      'criteria': 'between',
-#                                      'minimum': 1,
-#                                      'maximum': 10})
-#
-#     # Example 2. Limiting input to an integer outside a fixed range.
-#     #
-#     txt = 'Enter an integer that is not between 1 and 10 (using cell references)'
-#
-#     worksheet.write('A5', txt)
-#     worksheet.data_validation('B5', {'validate': 'integer',
-#                                      'criteria': 'not between',
-#                                      'minimum': '=E3',
-#                                      'maximum': '=F3'})
-#
-#     # Example 3. Limiting input to an integer greater than a fixed value.
-#     #
-#     txt = 'Enter an integer greater than 0'
-#
-#     worksheet.write('A7', txt)
-#     worksheet.data_validation('B7', {'validate': 'integer',
-#                                      'criteria': '>',
-#                                      'value': 0})
-#
-#     # Example 4. Limiting input to an integer less than a fixed value.
-#     #
-#     txt = 'Enter an integer less than 10'
-#
-#     worksheet.write('A9', txt)
-#     worksheet.data_validation('B9', {'validate': 'integer',
-#                                      'criteria': '<',
-#                                      'value': 10})
-#
-#     # Example 5. Limiting input to a decimal in a fixed range.
-#     #
-#     txt = 'Enter a decimal between 0.1 and 0.5'
-#
-#     worksheet.write('A11', txt)
-#     worksheet.data_validation('B11', {'validate': 'decimal',
-#                                       'criteria': 'between',
-#                                       'minimum': 0.1,
-#                                       'maximum': 0.5})
-#
-#     # Example 6. Limiting input to a value in a dropdown list.
-#     #
-#     txt = 'Select a value from a drop down list'
-#
-#     worksheet.write('A13', txt)
-#     worksheet.data_validation('B13', {'validate': 'list',
-#                                       'source': ['open', 'high', 'close']})
-#
-#     # Example 7. Limiting input to a value in a dropdown list.
-#     #
-#     txt = 'Select a value from a drop down list (using a cell range)'
-#
-#     worksheet.write('A15', txt)
-#     worksheet.data_validation('B15', {'validate': 'list',
-#                                       'source': '=$E$4:$G$4'})
-#
-#     # Example 8. Limiting input to a date in a fixed range.
-#     #
-#     txt = 'Enter a date between 1/1/2013 and 12/12/2013'
-#
-#     worksheet.write('A17', txt)
-#     worksheet.data_validation('B17', {'validate': 'date',
-#                                       'criteria': 'between',
-#                                       'minimum': date(2013, 1, 1),
-#                                       'maximum': date(2013, 12, 12)})
-#
-#     # Example 9. Limiting input to a time in a fixed range.
-#     #
-#     txt = 'Enter a time between 6:00 and 12:00'
-#
-#     worksheet.write('A19', txt)
-#     worksheet.data_validation('B19', {'validate': 'time',
-#                                       'criteria': 'between',
-#                                       'minimum': time(6, 0),
-#                                       'maximum': time(12, 0)})
-#
-#     # Example 10. Limiting input to a string greater than a fixed length.
-#     #
-#     txt = 'Enter a string longer than 3 characters'
-#
-#     worksheet.write('A21', txt)
-#     worksheet.data_validation('B21', {'validate': 'length',
-#                                       'criteria': '>',
-#                                       'value': 3})
-#
-#     # Example 11. Limiting input based on a formula.
-#     #
-#     txt = 'Enter a value if the following is true "=AND(F5=50,G5=60)"'
-#
-#     worksheet.write('A23', txt)
-#     worksheet.data_validation('B23', {'validate': 'custom',
-#                                       'value': '=AND(F5=50,G5=60)'})
-#
-#     # Example 12. Displaying and modifying data validation messages.
-#     #
-#     txt = 'Displays a message when you select the cell'
-#
-#     worksheet.write('A25', txt)
-#     worksheet.data_validation('B25', {'validate': 'integer',
-#                                       'criteria': 'between',
-#                                       'minimum': 1,
-#                                       'maximum': 100,
-#                                       'input_title': 'Enter an integer:',
-#                                       'input_message': 'between 1 and 100'})
-#
-#     # Example 13. Displaying and modifying data validation messages.
-#     #
-#     txt = "Display a custom error message when integer isn't between 1 and 100"
-#
-#     worksheet.write('A27', txt)
-#     worksheet.data_validation('B27', {'validate': 'integer',
-#                                       'criteria': 'between',
-#                                       'minimum': 1,
-#                                       'maximum': 100,
-#                                       'input_title': 'Enter an integer:',
-#                                       'input_message': 'between 1 and 100',
-#                                       'error_title': 'Input value is not valid!',
-#                                       'error_message':
-#                                           'It should be an integer between 1 and 100'})
-#
-#     # Example 14. Displaying and modifying data validation messages.
-#     #
-#     txt = "Display a custom info message when integer isn't between 1 and 100"
-#
-#     worksheet.write('A29', txt)
-#     worksheet.data_validation('B29', {'validate': 'integer',
-#                                       'criteria': 'between',
-#                                       'minimum': 1,
-#                                       'maximum': 100,
-#                                       'input_title': 'Enter an integer:',
-#                                       'input_message': 'between 1 and 100',
-#                                       'error_title': 'Input value is not valid!',
-#                                       'error_message': 'It should be an integer between 1 and 100',
-#                                       'error_type': 'information'})
-#
-#     workbook.close()

@@ -3,6 +3,7 @@ from collections import OrderedDict
 import xlrd
 import xlsxwriter
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db.models import Field
 from .Sheet import Sheet
 
@@ -48,7 +49,16 @@ class DeclarativeCombinedSheetsMetaclass(type):
         attrs["sheets"] =sheets
         return super().__new__(mcs, name, bases, attrs)
 
+
 class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
+
+    def __init__(self,*args,**kwargs):
+        super(CombinedSheet, self).__init__()
+        self.data = []
+        self.cleaned_data = []
+        self.errors = {}
+        self.instances = []
+        self._valid = None
 
     def generate_xls(self):
         workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
@@ -68,18 +78,46 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
             col_offset = sheet.generate_xls(worksheet,close=False,col_offset=col_offset,header_format=header_format)
         workbook.close()
 
-    def load(self,file_name=None, file_content=None):
-        content =[]
+    def open(self, file_name=None, file_content=None):
+        content = []
         wb = xlrd.open_workbook(file_name)
-        sh = wb.sheets()[0]
-        for sheet_name, sheet in self.sheets.items():
-            c = sheet.convert_json(sh)
-            for i,row in enumerate(c):
-                if len(content)==i:
-                    content.append({})
-                content[i].update(row)
-        for row in content:
-            row_objs = {}
+        self.xls_sheet = wb.sheets()[0]
+
+    def is_valid(self):
+        if self._valid is None:
             for sheet_name, sheet in self.sheets.items():
-                row_objs[getattr(sheet._meta,"object_name",sheet_name)] = sheet.row_processor(row,row_objs)
+                sheet.sheet =self.xls_sheet
+                if not sheet.is_valid():
+                    for k in sheet.errors:
+                        if not k in self.errors:
+                            self.errors[k]={}
+                        self.errors[k].update(sheet.errors[k])
+                for i,d in enumerate(sheet.data):
+                    if len(self.data) == i:
+                        self.data.append({})
+                    self.data[i].update(d)
+                for i, d in enumerate(sheet.cleaned_data):
+                    if len(self.cleaned_data) == i:
+                        self.cleaned_data.append({})
+                    self.cleaned_data[i].update(d)
+
+        self._valid = len(self.errors) == 0
+        return self._valid
+
+    def process(self):
+        if self._valid:
+            for row in self.cleaned_data:
+                row_objs = {}
+                for sheet_name, sheet in self.sheets.items():
+                    obj_name = getattr(sheet._meta, "object_name", sheet_name)
+                    row_objs[obj_name] = sheet.row_processor(row, row_objs)
+                self.instances.append(row_objs)
+
+
+    def load(self,file_name=None, file_content=None):
+        self.open(file_name,file_content)
+        if self.is_valid():
+            self.process()
+        else:
+            raise ValidationError("Sheet is not valid")
         #sh.close()
