@@ -95,6 +95,8 @@ class SheetOptions:
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
         self.raw_cols = getattr(options, "raw_cols", [])
+        if getattr(options, "object_name", None):
+            self.object_name = getattr(options, "object_name", None)
 
 
 
@@ -135,7 +137,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def _set_active_columns(self):
         "Applied columns and exclude settings from the Meta and generate the final list of columns to handle"
-
+        self.columns =[]
         if self.exclude:
             self.columns.extend([f for f in self.model._meta.fields if
                                  f.name not in self.explicit and not f.name in self.exclude])
@@ -149,6 +151,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def _get_labels(self):
         """Generate a dictionary for verbose_names and other one for field names"""
+        self.verbose_names={}
+        self.names={}
         for field in self.columns:
             self.verbose_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
@@ -190,20 +194,24 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         return options
 
-    def generate_xls(self):
-        workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
-        worksheet = workbook.add_worksheet()
+    def generate_xls(self,worksheet=None,close=True,col_offset=0,**kwargs):
 
-        header_format = workbook.add_format({
-            'border': 1,
-            'bg_color': '#C6EFCE',
-            'bold': True,
-            'text_wrap': True,
-            'valign': 'vcenter',
-            'indent': 1,
-        })
-        worksheet.set_row(0, height=30)
-        i = 0
+        if not worksheet:
+            workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
+            worksheet = workbook.add_worksheet()
+            header_format = workbook.add_format({
+                'border': 1,
+                'bg_color': '#C6EFCE',
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'vcenter',
+                'indent': 1,
+            })
+            worksheet.set_row(0, height=30)
+        else:
+            header_format = kwargs.get("header_format")
+
+        i = col_offset
 
         for name, field in self.verbose_names.items():
             worksheet.set_column(0, i, width=20)
@@ -212,7 +220,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             options = self.sheet_data_validation(field)
             worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
-        workbook.close()
+        if close:
+            workbook.close()
+        return col_offset
 
     def pre_load(self):
         pass
@@ -220,19 +230,23 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def valid(self):
         return True
 
+    def row_preprocessor(self,row):
+        return row
+
     def process(self):
         for row in self.content:
-            final_row = {k: v for k, v in row.items() if k in self.names}
-            obj = self.model(**final_row)
-            x= self.save(obj)
+            x = self.row_processor(row)
             if x:
                 self.instances.append(x)
 
     def post_process(self):
         print("Called Class post_process")
 
-    def row_processor(self, row):
-        return row
+    def row_processor(self, row,row_objs={}):
+        final_row = {k: v for k, v in row.items() if k in self.names}
+        obj = self.model(**final_row)
+        x = self.save(obj,row_objs)
+        return x
 
     def convert_types(self, field, user_val):
         val = field.get_default()
@@ -272,10 +286,12 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 temp_result = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verbose_names[str(key).strip()]
-                    temp_result[field.name] = self.convert_types(field, user_val)
-                result.append(self.row_processor(temp_result))
+                    field = self.verbose_names.get(str(key).strip(),None)
+                    if field:
+                        temp_result[field.name] = self.convert_types(field, user_val)
+                result.append(self.row_preprocessor(temp_result))
         self.content = result
+        return result
 
     def load(self, file_name=None, file_content=None):
         if file_name:

@@ -8,10 +8,9 @@ from batch_sheet.Sheet import Sheet
 
 
 class StudentSheet(Sheet):
-    courses = models.ForeignKey(Courses,on_delete=models.PROTECT)
+    courses = models.ForeignKey(Courses,on_delete=models.PROTECT, blank=True)
 
     def save(self,obj):
-
         if Student.objects.filter(student_id=obj.student_id).exists():
             s = Student.objects.get(student_id=obj.student_id)
             s.courses.append(obj.courses.id)
