@@ -1,24 +1,44 @@
-from django.contrib.auth.models import User
+from .models import Patient,Test,Sample
+from django.db import models
 
 from batch_sheet.Sheet import Sheet
+from batch_sheet.CombinedSheet import CombinedSheet
 
 
-
-
-
-
-class UserSheet(Sheet):
-    def post_process(self):
-        print("Called UserSheet post_process")
-        super().post_process()
-        for obj in self.instances:
-            obj.set_password('test1234')
-            obj.save()
+class PatientSheet(Sheet):
+    def save(self, obj, row_objs):
+        patient = Patient.objects.filter(MRN = obj.MRN)
+        if patient.exists():
+            p = patient[0]
+        else:
+            p = obj
+            p.save()
+        return p
     class Meta:
-        Model = User
-        exclude = ('last_login', 'password',"date_joined","id")
+        exclude=('id','date_admitted','lastUpdate')
+        Model = Patient
+        obj_name = "patient"
 
-def test_sheet():
-   u =  UserSheet()
-   print (u.verboses_names)
-   u.generate_xls()
+
+class SampleSheet(Sheet):
+    def row_preprocessor(self,row):
+        return row
+
+    def save(self,obj,row_objs):
+        patient = row_objs.get('patient')
+        if patient is None:
+            return None
+        else:
+            obj.patient = patient
+            obj.save()
+            return obj
+
+    class Meta:
+        exclude =('id','sample_date','lastUpdate')
+        validation_exclude = ('patient',)
+        Model = Sample
+
+
+class NGSSheet(CombinedSheet):
+    patient = PatientSheet()
+    sample = SampleSheet()

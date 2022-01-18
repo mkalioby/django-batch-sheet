@@ -94,6 +94,9 @@ class SheetOptions:
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
         self.raw_cols = getattr(options, "raw_cols", [])
+        self.validation_exclude = getattr(options, "validation_exclude", [])
+        if getattr(options, "object_name", None):
+            self.object_name = getattr(options, "object_name", None)
 
 
 
@@ -119,6 +122,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         self.attrs = self._meta.attrs
         self.selected_columns = self._meta.columns
         self.rows_count = self._meta.rows_count
+        self.not_provided = []
         if len(self.columns) == 0 and len(self.exclude) == 0:
             raise ImproperlyConfigured(
                 "Calling Sheet without defining 'fields' or "
@@ -137,7 +141,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def _set_active_columns(self):
         "Applied columns and exclude settings from the Meta and generate the final list of columns to handle"
-
+        self.columns =[]
         if self.exclude:
             self.columns.extend([f for f in self.model._meta.fields if
                                  f.name not in self.explicit and not f.name in self.exclude])
@@ -151,6 +155,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def _get_labels(self):
         """Generate a dictionary for verbose_names and other one for field names"""
+        self.verbose_names={}
+        self.names={}
         for field in self.columns:
             self.verbose_names[str(field.verbose_name)] = field
             self.names[str(field.name)] = field
@@ -192,57 +198,73 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         return options
 
-    def generate_xls(self):
-        workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
-        worksheet = workbook.add_worksheet()
+    def generate_xls(self,worksheet=None,close=True,col_offset=0,**kwargs):
 
-        header_format = workbook.add_format({
-            'border': 1,
-            'bg_color': '#C6EFCE',
-            'bold': True,
-            'text_wrap': True,
-            'valign': 'vcenter',
-            'indent': 1,
-        })
-        worksheet.set_row(0, height=30)
-        i = 0
+        if not worksheet:
+            workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
+            worksheet = workbook.add_worksheet()
+            header_format = workbook.add_format({
+                'border': 1,
+                'bg_color': '#C6EFCE',
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'vcenter',
+                'indent': 1,
+            })
+            worksheet.set_row(0, height=30)
+        else:
+            header_format = kwargs.get("header_format")
+
+        i = col_offset
 
         for name, field in self.verbose_names.items():
+            if field.get_internal_type() == "NOT_PROVIDED":
+                pass
             worksheet.set_column(0, i, width=20)
             print(name, type(name))
             worksheet.write(0, i, name, header_format)
             options = self.sheet_data_validation(field)
             worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
-        workbook.close()
+        if close:
+            workbook.close()
+        return col_offset
 
     def pre_load(self):
         pass
 
+
     def is_valid(self):
+        if len(self.cleaned_data)==0:
+            self.convert_json(self.sheet)
         return len(self.errors) == 0
 
-    def process(self):
+    def row_preprocessor(self,row):
+        return row
+
+    def row_processor(self, row,row_objs={}):
+        final_row = {k: v for k, v in row.items() if k in self.names}
+        obj = self.model(**final_row)
+        x = self.save(obj,row_objs)
+        return x
+
+    def process(self,):
+        self.convert_json(self.sheet)
         for row in self.cleaned_data:
-            final_row = {k: v for k, v in row.items() if k in self.names}
-            obj = self.model(**final_row)
-            x= self.save(obj)
+            x = self.row_processor(row)
             if x:
                 self.instances.append(x)
 
     def post_process(self):
-        print("Called Class post_process")
-
-    def row_pre_processor(self, row):
-        return row
+        pass
 
     def clean(self,row_number, row):
         final_row = {k: v for k, v in row.items() if k in self.names}
         obj = self.model(**final_row)
         try:
-            obj.clean_fields()
+            obj.clean_fields(exclude=self._meta.validation_exclude)
         except ValidationError as exp:
-            self.errors[row_number] =  exp.message_dict
+            self.errors[row_number] = exp.message_dict
 
     def convert_types(self, field, user_val):
         val = field.get_default()
@@ -251,6 +273,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             if user_val == "Yes": val = True
             if user_val == "No": val = False
             return val
+
         elif field.get_internal_type() == "IntegerField":
             if user_val != "":
                 return int(user_val)
@@ -276,6 +299,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def convert_json(self, sheet):
         result = []
+        self.cleaned_data= []
+        self.data= []
+        self.errors ={}
         if not result:
             keys = sheet.row_values(0)
             for row in range(1, sheet.nrows):
@@ -283,7 +309,8 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 row_data = {}
                 for col, key in enumerate(keys):
                     user_val = sheet.row_values(row)[col]
-                    field = self.verbose_names[str(key).strip()]
+                    field = self.verbose_names.get(str(key).strip())
+                    if field is None: continue
                     field_name = field.name
                     row_data [field_name]=user_val
                     try:
@@ -292,21 +319,27 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                         #temp_result[field_name] = None
                         if not row in self.errors: self.errors[row] = {}
                         self.errors[row][field_name] = exp
-                final_row = self.row_pre_processor(temp_result)
+                for c in self.verbose_names:
+                    if not c in temp_result:
+                        temp_result[c]=None
+                final_row = self.row_preprocessor(temp_result)
                 self.cleaned_data.append(final_row)
                 self.data.append(row_data)
                 self.clean(row,final_row)
 
-
-    def load(self, file_name=None, file_content=None):
+    def open(self, file_name=None, file_content=None):
         if file_name:
             wb = xlrd.open_workbook(file_name)
-            sh = wb.sheets()[0]
+            self.sheet = wb.sheets()[0]
+
+    def load(self, file_name=None, file_content=None):
+            self.open(file_name,file_content)
             self.pre_load()
-            self.convert_json(sh)
             if self.is_valid():
                 self.process()
                 self.post_process()
+            else:
+                raise ValidationError(self.errors)
 
 
 
