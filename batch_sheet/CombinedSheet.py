@@ -60,22 +60,29 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
         self.instances = []
         self._valid = None
 
-    def generate_xls(self):
-        workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
+    def generate_xls(self,file_path=settings.BASE_DIR + '/data_validate.xls'):
+        workbook = xlsxwriter.Workbook(file_path)
         worksheet = workbook.add_worksheet()
         header_format = workbook.add_format({
                 'border': 1,
-                'bg_color': '#C6EFCE',
                 'bold': True,
                 'text_wrap': True,
                 'valign': 'vcenter',
                 'indent': 1,
             })
+        required_format = workbook.add_format({
+            'border': 1,
+            'color': '#ff0000',
+            'bold': True,
+            'text_wrap': True,
+            'valign': 'vcenter',
+            'indent': 1,
+        })
         worksheet.set_row(0, height=30)
         col_offset = 0
 
         for sheet_name,sheet in self.sheets.items():
-            col_offset = sheet.generate_xls(worksheet,close=False,col_offset=col_offset,header_format=header_format)
+            col_offset = sheet.generate_xls(worksheet=worksheet,close=False,col_offset=col_offset,header_format=header_format,required_format=required_format)
         workbook.close()
 
     def open(self, file_name=None, file_content=None):

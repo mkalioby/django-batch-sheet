@@ -94,6 +94,7 @@ class SheetOptions:
         self.exclude = getattr(options, "exclude", ())
         self.model = getattr(options, "Model", None)
         self.raw_cols = getattr(options, "raw_cols", [])
+        self.title_header = getattr(options, "title_header", False)
         self.validation_exclude = getattr(options, "validation_exclude", [])
         if getattr(options, "object_name", None):
             self.object_name = getattr(options, "object_name", None)
@@ -158,18 +159,28 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         self.verbose_names={}
         self.names={}
         for field in self.columns:
-            self.verbose_names[str(field.verbose_name)] = field
+            self.verbose_names[field.verbose_name.title() if self._meta.title_header else field.verbose_name] = field
             self.names[str(field.name)] = field
 
     def sheet_data_validation(self, field):
-        options = {'validate': 'any', 'criteria': 'not equal to', 'value': None}
+        options = {'validate': 'any', 'criteria': 'not equal to',"value":""}
+        if field.blank:
+            options["required"] = False
+        else:
+            options["required"] = True
         if field.get_internal_type() == "BooleanField":
-            options = {'validate': 'list', 'source': ["", "Yes", "No"]}
+            if options["required"]:
+                l= ["Yes", "No"]
+            else:
+                l = ["---","Yes", "No"]
+            options .update({'validate': 'list', 'source':l})
+        elif field.get_internal_type() == "IntegerField":
+            options.update({'validate': 'integer'})
         elif field.get_internal_type() == "CharField":
             if field.choices:
-                options = {'validate': 'list', 'source': [c[0] for c in field.choices]}
+                options.update({'validate': 'list', 'source': [c[0] for c in field.choices]})
         elif field.get_internal_type() == "DateField":
-            options = {'validate': 'date',
+            options.update({'validate': 'date',
                        'criteria': '>',
                        'value': datetime.date(1900, 1, 1),
                        'input_title': 'Date format: YYYY-MM-DD',
@@ -177,9 +188,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                        'error_title': 'Date is not valid!',
                        'error_message': 'It should be greater than 1900-01-01',
                        'error_type': 'information'
-                       }
+                       })
         elif field.get_internal_type() == "DateTimeField":
-            options = {'validate': 'date',
+            options.update({'validate': 'date',
                        'criteria': '>',
                        'value': datetime.date(1900, 1, 1),
                        'input_title': 'Date format: YYYY-MM-DD HH:MM',
@@ -187,25 +198,32 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                        'error_title': 'Date is not valid!',
                        'error_message': 'It should be greater than 1900-01-01 00:00:00',
                        'error_type': 'information'
-                       }
+                       })
         elif field.get_internal_type() == "ForeignKey":
             if field.name not in self._meta.raw_cols:
                 l=[]
                 if field.null or field.blank:
                     l.append('---')
                 l.extend([str(o) for o in field.related_model.objects.all()])
-                options = {'validate': 'list', 'source': l}
+                options.update({'validate': 'list', 'source': l})
 
         return options
 
-    def generate_xls(self,worksheet=None,close=True,col_offset=0,**kwargs):
+    def generate_xls(self,file_path=settings.BASE_DIR + '/batch_sheet.xls', worksheet=None,close=True,col_offset=0,**kwargs):
 
         if not worksheet:
-            workbook = xlsxwriter.Workbook(settings.BASE_DIR + '/data_validate.xls')
+            workbook = xlsxwriter.Workbook(file_path)
             worksheet = workbook.add_worksheet()
+            required_format = workbook.add_format({
+                'border': 1,
+                'color': '#ff0000',
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'vcenter',
+                'indent': 1,
+            })
             header_format = workbook.add_format({
                 'border': 1,
-                'bg_color': '#C6EFCE',
                 'bold': True,
                 'text_wrap': True,
                 'valign': 'vcenter',
@@ -214,6 +232,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             worksheet.set_row(0, height=30)
         else:
             header_format = kwargs.get("header_format")
+            required_format = kwargs.get("required_format")
 
         i = col_offset
 
@@ -221,14 +240,16 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
             if field.get_internal_type() == "NOT_PROVIDED":
                 pass
             worksheet.set_column(0, i, width=20)
-            print(name, type(name))
-            worksheet.write(0, i, name, header_format)
             options = self.sheet_data_validation(field)
+            if options.pop("required",True):
+                worksheet.write(0, i, name, required_format)
+            else:
+                worksheet.write(0, i, name, header_format)
             worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
         if close:
             workbook.close()
-        return col_offset
+        return i
 
     def pre_load(self):
         pass
@@ -268,22 +289,31 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
     def convert_types(self, field, user_val):
         val = field.get_default()
-        null = field.null
+        required = field.blank
         if field.get_internal_type() == "BooleanField":
-            if user_val == "Yes": val = True
-            if user_val == "No": val = False
-            return val
+            if user_val == "Yes": return True
+            if user_val == "No": return False
+            return None
 
         elif field.get_internal_type() == "IntegerField":
             if user_val != "":
-                return int(user_val)
+                try:
+                    return int(user_val)
+                except:
+                    raise ValidationError("%s is not a valid integer value" % (user_val))
         elif field.get_internal_type() == "FloatField":
             if user_val != "":
-                return float(user_val)
+                try:
+                    return float(user_val)
+                except:
+                    raise ValidationError("%s is not a valid float value" % (user_val))
         elif field.get_internal_type() == "DecimalField":
             from decimal import Decimal
             if user_val != "":
-                return Decimal(user_val)
+                try:
+                    return Decimal(user_val)
+                except:
+                    raise ValidationError("%s is not a valid decimal value" % (user_val))
         elif field.get_internal_type() in ["DateField","DateTimeField"]:
             if user_val != "":
                 try:

@@ -18,6 +18,7 @@ class PatientSheet(Sheet):
         exclude=('id','date_admitted','lastUpdate')
         Model = Patient
         obj_name = "patient"
+        title_header = True
 
 
 class SampleSheet(Sheet):
@@ -36,6 +37,7 @@ class SampleSheet(Sheet):
     class Meta:
         exclude =('id','sample_date','lastUpdate')
         validation_exclude = ('patient',)
+        title_header = True
         Model = Sample
 
 
