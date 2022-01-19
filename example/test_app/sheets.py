@@ -1,4 +1,4 @@
-from .models import Patient,Test,Sample
+from .models import Patient,Test,RequestedTest
 from django.db import models
 
 from batch_sheet.Sheet import Sheet
@@ -18,13 +18,9 @@ class PatientSheet(Sheet):
         exclude=('id','date_admitted','lastUpdate')
         Model = Patient
         obj_name = "patient"
-        title_header = True
 
 
-class SampleSheet(Sheet):
-    def row_preprocessor(self,row):
-        return row
-
+class RequestedTestSheet(Sheet):
     def save(self,obj,row_objs):
         patient = row_objs.get('patient')
         if patient is None:
@@ -35,12 +31,12 @@ class SampleSheet(Sheet):
             return obj
 
     class Meta:
-        exclude =('id','sample_date','lastUpdate')
+        exclude =('id','sample_date','lastUpdate','patient')
         validation_exclude = ('patient',)
         title_header = True
-        Model = Sample
+        Model = RequestedTest
 
 
-class NGSSheet(CombinedSheet):
+class TestSheet(CombinedSheet):
     patient = PatientSheet()
-    sample = SampleSheet()
+    sample = RequestedTestSheet()

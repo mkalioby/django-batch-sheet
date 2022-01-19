@@ -120,11 +120,12 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         self.model = self._meta.model
         self.exclude = self._meta.exclude
+        self.exclude = self._meta.exclude
         self.attrs = self._meta.attrs
         self.selected_columns = self._meta.columns
         self.rows_count = self._meta.rows_count
         self.not_provided = []
-        if len(self.columns) == 0 and len(self.exclude) == 0:
+        if len(self.selected_columns) == 0 and len(self.exclude) == 0:
             raise ImproperlyConfigured(
                 "Calling Sheet without defining 'fields' or "
                 "'exclude' explicitly is prohibited."

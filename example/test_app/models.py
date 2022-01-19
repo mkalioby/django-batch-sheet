@@ -24,7 +24,7 @@ class Patient(models.Model):
     lastUpdate = models.DateTimeField(auto_now=True)
 
 
-class Sample(models.Model):
+class RequestedTest(models.Model):
     patient = models.ForeignKey(Patient,on_delete=models.CASCADE)
     test = models.ForeignKey(Test,on_delete=models.PROTECT,verbose_name="Test")
     sample_date = models.DateField(auto_now_add=True,auto_created=True)
