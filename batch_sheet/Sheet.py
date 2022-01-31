@@ -131,9 +131,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 "'exclude' explicitly is prohibited."
             )
 
-        if len(self.selected_columns) > 0 and len(self.exclude) < 0:
+        elif len(self.selected_columns) > 0 and len(self.exclude) > 0:
             raise ImproperlyConfigured(
-                "Cannot call both columns and exclude. Please specify only one"
+                "Cannot set both columns and exclude. Please specify only one"
             )
 
         if self.model is None:
@@ -149,7 +149,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                                  f.name not in self.explicit and not f.name in self.exclude])
         else:
             self.columns.extend(
-                [f for f in self.model._meta.fields if f.name in self.columns and f.name not in self.explicit])
+                [f for f in self.model._meta.fields if f.name in self.selected_columns and f.name not in self.explicit])
 
         for name,field in self.explicit.items():
             self.columns.append(field)
