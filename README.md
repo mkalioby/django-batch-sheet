@@ -12,6 +12,20 @@ and why write a django app that handles this like ModelForm handles models and s
 * Allow alot of functions to override the class behavior (`row_preprocess`,`save`,`pre_load`,`post_process`),
 * Automatic Loading of the data in the sheet to the model.
 
+## Install
+1. Install the package
+```sh
+pip install django-batch-sheet
+```
+2. Add it to INSTALLED_APPS
+```python
+INSTALLED_APPS=[
+...
+'batch_sheet'
+...
+]
+```
+
 ## Example
 
 Let's assume that we have the following models with these rules
