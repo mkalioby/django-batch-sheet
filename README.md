@@ -8,6 +8,7 @@ and why write a django app that handles this like ModelForm handles models and s
 * Generate a Sheet from a Django model or a combination of models (through Combined Sheet),
 * Add the validation rules for Choices, Foreign Keys, Integers automatically in Excel,
 * Showing the required field in red by default
+* Sheet can be validated automatically and check with `is_valid()`
 * Allow  overriding the behavior of  model in the class,
 * Allow alot of functions to override the class behavior (`row_preprocess`,`save`,`pre_load`,`post_process`),
 * Automatic Loading of the data in the sheet to the model.
