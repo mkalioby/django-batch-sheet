@@ -3,3 +3,6 @@ env/
 venv/
 *py_cache__*
 .idea/
+example/db.sqlite3
+example/App.xls
+django_batch_sheet.egg-info/
