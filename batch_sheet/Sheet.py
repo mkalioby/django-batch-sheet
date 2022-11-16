@@ -237,7 +237,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         else:
             header_format = kwargs.get("header_format")
             required_format = kwargs.get("required_format")
-
+        data_worksheet.hide()
         i = col_offset
 
         for name, field in self.verbose_names.items():

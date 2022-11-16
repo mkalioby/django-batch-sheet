@@ -85,6 +85,7 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
 
         for sheet_name,sheet in self.sheets.items():
             col_offset = sheet.generate_xls(worksheet=worksheet,data_worksheet=data_worksheet,close=False,col_offset=col_offset,header_format=header_format,required_format=required_format)
+        data_worksheet.hide()
         workbook.close()
 
     def open(self, file_name=None, file_content=None):
