@@ -59,10 +59,12 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
         self.errors = {}
         self.instances = []
         self._valid = None
+        self.data_sheet_name = 'BatchSheetDetails'
 
     def generate_xls(self,file_path=settings.BASE_DIR + '/data_validate.xls'):
         workbook = xlsxwriter.Workbook(file_path)
         worksheet = workbook.add_worksheet()
+        data_worksheet = workbook.add_worksheet(name=self.data_sheet_name)
         header_format = workbook.add_format({
                 'border': 1,
                 'bold': True,
@@ -82,7 +84,8 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
         col_offset = 0
 
         for sheet_name,sheet in self.sheets.items():
-            col_offset = sheet.generate_xls(worksheet=worksheet,close=False,col_offset=col_offset,header_format=header_format,required_format=required_format)
+            col_offset = sheet.generate_xls(worksheet=worksheet,data_worksheet=data_worksheet,close=False,col_offset=col_offset,header_format=header_format,required_format=required_format)
+        data_worksheet.hide()
         workbook.close()
 
     def open(self, file_name=None, file_content=None):

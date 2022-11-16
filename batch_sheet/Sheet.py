@@ -125,6 +125,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
         self.selected_columns = self._meta.columns
         self.rows_count = self._meta.rows_count
         self.not_provided = []
+        self.data_sheet_name = 'BatchSheetDetails'
         if len(self.selected_columns) == 0 and len(self.exclude) == 0:
             raise ImproperlyConfigured(
                 "Calling Sheet without defining 'fields' or "
@@ -210,7 +211,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         return options
 
-    def generate_xls(self,file_path=settings.BASE_DIR + '/batch_sheet.xls', worksheet=None,close=True,col_offset=0,**kwargs):
+    def generate_xls(self,file_path=settings.BASE_DIR + '/batch_sheet.xls', worksheet=None,data_worksheet=None,close=True,col_offset=0,**kwargs):
 
         if not worksheet:
             workbook = xlsxwriter.Workbook(file_path)
@@ -231,10 +232,12 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 'indent': 1,
             })
             worksheet.set_row(0, height=30)
+            if not data_worksheet:
+                data_worksheet = workbook.add_worksheet(name=self.data_sheet_name)
         else:
             header_format = kwargs.get("header_format")
             required_format = kwargs.get("required_format")
-
+        data_worksheet.hide()
         i = col_offset
 
         for name, field in self.verbose_names.items():
@@ -246,6 +249,13 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
                 worksheet.write(0, i, name, required_format)
             else:
                 worksheet.write(0, i, name, header_format)
+            if 'source' in options:
+                from xlsxwriter.utility import xl_rowcol_to_cell
+                source_list = options['source']
+                data_worksheet.write_column(0, i, source_list)
+                start_source = xl_rowcol_to_cell(0, i, row_abs=True, col_abs=True)
+                end_source = xl_rowcol_to_cell(len(source_list), i, row_abs=True, col_abs=True)
+                options['source'] = f'={self.data_sheet_name}!{start_source}:{end_source}'
             worksheet.data_validation(1, i, self.rows_count, i, options)
             i += 1
         if close:
