@@ -7,3 +7,6 @@ example/db.sqlite3
 example/App.xls
 django_batch_sheet.egg-info/
 .DS_Store
+*.xls*
+dist/
+build/
