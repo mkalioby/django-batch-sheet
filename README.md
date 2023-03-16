@@ -1,8 +1,8 @@
 ## django-batch-sheet
 
-Most of the projects we worked on needs a feature to upload data in batch, we always ended up write another code to handle 
-the Excel sheet and where each column shall go in the model, in the latest project we decided to handle it differently
-and why write a django app that handles this like ModelForm handles models and surprisingly, it worked.
+Most of the projects we worked on needs a feature to upload data in batch, we always ended up writing another code to handle 
+the Excel sheet and where each column shall go in the model(s), in the latest project we decided to handle it differently
+and that is why we wrote a django app that handles this like ModelForm handles models and surprisingly, it worked.
 
 ## Features
 * Generate a Sheet from a Django model or a combination of models (through Combined Sheet),
