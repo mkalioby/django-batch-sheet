@@ -16,11 +16,12 @@ class Command(BaseCommand):
         if options["sheet"] is None:
             print("Class to import is required --sheet")
 
-        sheet = importlib.import_module(options["sheet"])
+        module = importlib.import_module(".".join(options["sheet"].split(".")[:-1]))
+        sheet = getattr(module, options["sheet"].split(".")[-1])
         s = sheet()
         s.open(file_name = options["xls"])
         if s.is_valid():
-            s.process
+            s.process()
         else:
             print("File isn't valid")
             print(s.errors)

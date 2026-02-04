@@ -290,6 +290,9 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def post_process(self):
         pass
 
+    def save(self, obj, row_objs):
+        obj.save()
+
     def clean(self,row_number, row):
         final_row = {k: v for k, v in row.items() if k in self.names}
         obj = self.model(**final_row)

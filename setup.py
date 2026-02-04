@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='django-batch-sheet',
-    version='0.10.0',
+    version='0.20.0',
     description='Create Excel Sheet from Django Model and load them automatically',
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -20,7 +20,7 @@ setup(
         'xlsxwriter',
         'xlrd'
       ],
-    python_requires=">=3.5",
+    python_requires=">=3.6",
     include_package_data=True,
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -32,6 +32,11 @@ setup(
         "Framework :: Django :: 3.2",
         "Framework :: Django :: 4.0",
         "Framework :: Django :: 4.1",
+        "Framework :: Django :: 4.2",
+        "Framework :: Django :: 5.0",
+        "Framework :: Django :: 5.1",
+        "Framework :: Django :: 5.2",
+        "Framework :: Django :: 6.0",
         "Intended Audience :: Developers",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
@@ -41,6 +46,9 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 )
