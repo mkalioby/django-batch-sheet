@@ -4,6 +4,7 @@ import xlrd
 import xlsxwriter
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Field
 from .Sheet import Sheet
 
@@ -61,7 +62,7 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
         self._valid = None
         self.data_sheet_name = 'BatchSheetDetails'
 
-    def generate_xls(self,file_path=settings.BASE_DIR + '/data_validate.xls'):
+    def generate_xls(self,file_path=str(settings.BASE_DIR) + '/data_validate.xls'):
         workbook = xlsxwriter.Workbook(file_path)
         worksheet = workbook.add_worksheet()
         data_worksheet = workbook.add_worksheet(name=self.data_sheet_name)
@@ -93,15 +94,20 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
         wb = xlrd.open_workbook(file_name)
         self.xls_sheet = wb.sheets()[0]
 
-    def is_valid(self):
+    def is_valid(self,show_sheet=False):
         if self._valid is None:
             for sheet_name, sheet in self.sheets.items():
                 sheet.sheet =self.xls_sheet
                 if not sheet.is_valid():
                     for k in sheet.errors:
-                        if not k in self.errors:
-                            self.errors[k]={}
-                        self.errors[k].update(sheet.errors[k])
+                        if show_sheet:
+                            if not sheet.name in self.errors:
+                                self.errors[sheet.name]={}
+                            self.errors[sheet.name][k]=sheet.errors[k]
+                        else:
+                            if not k in self.errors:
+                                self.errors[k] = {}
+                            self.errors[k].update(sheet.errors[k])
                 for i,d in enumerate(sheet.data):
                     if len(self.data) == i:
                         self.data.append({})
@@ -116,12 +122,15 @@ class CombinedSheet(metaclass=DeclarativeCombinedSheetsMetaclass):
 
     def process(self):
         if self._valid:
-            for row in self.cleaned_data:
-                row_objs = {}
-                for sheet_name, sheet in self.sheets.items():
-                    obj_name = getattr(sheet._meta, "object_name", sheet_name)
-                    row_objs[obj_name] = sheet.row_processor(row, row_objs)
-                self.instances.append(row_objs)
+            with transaction.atomic():
+                for row in self.cleaned_data:
+                    row_objs = {}
+                    for sheet_name, sheet in self.sheets.items():
+                        obj_name = getattr(sheet._meta, "object_name", sheet_name)
+                        row = sheet.row_preprocessor(row)
+                        row_objs[obj_name] = sheet.row_processor(row, row_objs)
+                    self.instances.append(row_objs)
+            return self.instances
 
 
     def load(self,file_name=None, file_content=None):

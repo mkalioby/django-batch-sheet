@@ -3,8 +3,8 @@
 from setuptools import find_packages, setup
 
 setup(
-    name='django-batch-sheet',
-    version='0.20.0',
+    name='django_batch_sheet',
+    version='0.90.0',
     description='Create Excel Sheet from Django Model and load them automatically',
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -14,7 +14,7 @@ setup(
     url = 'https://github.com/mkalioby/django-batch-sheet/',
     download_url='https://github.com/mkalioby/django-batch-sheet/',
     license='MIT',
-    packages=['batch_sheet'],
+    packages=['batch_sheet','batch_sheet.management','batch_sheet.management.commands'],
     install_requires=[
         'django >= 2.2',
         'xlsxwriter',

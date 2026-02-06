@@ -114,7 +114,10 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     errors = {}
     data = []
     cleaned_data = []
-
+    @classmethod
+    @property
+    def name(cls):
+        return cls.__name__
     def __init__(self, *args, **kwargs):
         super().__init__()
 
@@ -211,7 +214,7 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
 
         return options
 
-    def generate_xls(self,file_path=settings.BASE_DIR + '/batch_sheet.xls', worksheet=None,data_worksheet=None,close=True,col_offset=0,**kwargs):
+    def generate_xls(self,file_path=str(settings.BASE_DIR) + '/batch_sheet.xls', worksheet=None,data_worksheet=None,close=True,col_offset=0,**kwargs):
 
         if not worksheet:
             workbook = xlsxwriter.Workbook(file_path)
@@ -283,9 +286,11 @@ class Sheet(metaclass=DeclarativeColumnsMetaclass):
     def process(self,):
         self.convert_json(self.sheet)
         for row in self.cleaned_data:
-            x = self.row_processor(row)
+            final_row = self.row_preprocessor(row)
+            x = self.row_processor(final_row)
             if x:
                 self.instances.append(x)
+        return self.instances
 
     def post_process(self):
         pass
